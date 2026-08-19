@@ -21,6 +21,12 @@ Además de la interfaz de escritorio, la aplicación valida ficheros de entrada,
 - Organización de código en módulos reutilizables.
 - Control de versiones con Git y GitHub.
 
+## Origen de la lógica
+
+Parte de la lógica de validación y asignación se diseñó inicialmente mediante consultas SQL. Posteriormente la adapté a Python para crear una herramienta de escritorio autónoma, con validación de archivos Excel y generación de resultados.
+
+Este proceso me permitió trasladar reglas orientadas a datos a una aplicación reutilizable y más accesible para usuarios no técnicos.
+
 ## Uso de IA durante el desarrollo
 
 Se utilizaron herramientas de IA como apoyo para explorar alternativas, revisar código, refactorizar y resolver problemas puntuales.
