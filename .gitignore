@@ -1,0 +1,27 @@
+# Business input and output files
+*.xlsx
+*.xlsm
+*.xltx
+*.xltm
+*.csv
+
+# Local application settings and credentials
+sales_operations_tool*_config.json
+.env
+
+# Python caches and virtual environments
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# Local caches and generated files
+*.pkl
+*.sqlite
+*.sqlite3
+*.db
+*.log
+*.zip
+build/
+dist/
