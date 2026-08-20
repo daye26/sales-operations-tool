@@ -27,6 +27,14 @@ Parte de la lógica de validación y asignación se diseñó inicialmente median
 
 Este proceso me permitió trasladar reglas orientadas a datos a una aplicación reutilizable y más accesible para usuarios no técnicos.
 
+## Ejemplos SQL
+
+El trabajo original incluyó 30 scripts SQL orientados a distintos procesos operativos. Este repositorio contiene una selección reducida de ejemplos reconstruidos para fines de portfolio.
+
+Los scripts publicados muestran técnicas de normalización, validación, CTEs, agregaciones y funciones de ventana, sin incluir datos operativos, rutas locales, nombres internos de tablas ni configuraciones confidenciales.
+
+Consulta [sql/README.md](sql/README.md) para ejecutar los ejemplos con datos completamente ficticios.
+
 ## Uso de IA durante el desarrollo
 
 Se utilizaron herramientas de IA como apoyo para explorar alternativas, revisar código, refactorizar y resolver problemas puntuales.
