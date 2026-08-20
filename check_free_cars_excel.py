@@ -10,6 +10,7 @@ import warnings
 from openpyxl import Workbook, load_workbook
 
 import asignaciones_excel as vehicle_tracking_cache
+from excel_sheet_selection import select_active_then_sheet1
 import free_cars_history
 from excel_output import append_row, calculate_column_widths, prepare_worksheet, save_workbook_atomically
 from port_resolution import resolve_port
@@ -155,7 +156,14 @@ def open_sheet(key):
         raise FileNotFoundError(path)
     workbook = load_workbook(path, read_only=True, data_only=True)
     selected_sheet = SHEET_NAMES.get(key)
-    worksheet = workbook[selected_sheet] if selected_sheet in workbook.sheetnames else workbook.active
+    if key == "not_allocated":
+        worksheet = select_active_then_sheet1(
+            workbook,
+            HEADER_ALIASES,
+            ("vin", "material_code", "note"),
+        )
+    else:
+        worksheet = workbook[selected_sheet] if selected_sheet in workbook.sheetnames else workbook.active
     worksheet.reset_dimensions()
     return workbook, worksheet
 

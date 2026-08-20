@@ -9,6 +9,7 @@ import warnings
 
 from openpyxl import Workbook, load_workbook
 
+from excel_sheet_selection import select_active_then_sheet1
 from excel_output import append_row, calculate_column_widths, prepare_worksheet, save_workbook_atomically
 import free_cars_history
 from port_resolution import resolve_port
@@ -227,7 +228,10 @@ def open_sheet(key):
         raise FileNotFoundError(path)
     workbook = load_workbook(path, read_only=True, data_only=True)
     selected_sheet = SHEET_NAMES.get(key)
-    worksheet = workbook[selected_sheet] if selected_sheet in workbook.sheetnames else workbook.active
+    if key == "not_allocated":
+        worksheet = select_active_then_sheet1(workbook, HEADER_ALIASES, ("vin", "note"))
+    else:
+        worksheet = workbook[selected_sheet] if selected_sheet in workbook.sheetnames else workbook.active
     worksheet.reset_dimensions()
     return workbook, worksheet
 
@@ -723,6 +727,8 @@ def make_stock_row(vt, mc, dealer):
     if gate_out_days is not None:
         if gate_out_days > 360:
             duration_logic = ">360 days"
+        elif gate_out_days > 300:
+            duration_logic = ">300 days"
         elif gate_out_days > 270:
             duration_logic = ">270 days"
         elif gate_out_days > 180:

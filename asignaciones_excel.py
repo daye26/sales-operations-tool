@@ -10,6 +10,7 @@ import warnings
 
 from openpyxl import Workbook, load_workbook
 
+from excel_sheet_selection import select_active_then_sheet1
 from excel_output import append_row, calculate_column_widths, prepare_worksheet, save_workbook_atomically
 import free_cars_history
 from port_resolution import resolve_port as resolve_operational_port
@@ -337,7 +338,13 @@ def open_sheet(table_name, sheet_name=None):
 
     workbook = load_workbook(path, read_only=True, data_only=True)
     selected_sheet = sheet_name or SHEET_NAMES.get(table_name)
-    if selected_sheet and selected_sheet in workbook.sheetnames:
+    if table_name == "not_allocated":
+        worksheet = select_active_then_sheet1(
+            workbook,
+            HEADER_ALIASES,
+            ("vin", "material_code", "note"),
+        )
+    elif selected_sheet and selected_sheet in workbook.sheetnames:
         worksheet = workbook[selected_sheet]
     else:
         worksheet = workbook.active

@@ -401,14 +401,20 @@ def _read_port_stock_records(source_path, report_progress):
     finally:
         workbook.close()
 
+    for vin in duplicated_vins:
+        ports_by_vin.pop(vin, None)
     if duplicated_vins:
-        examples = "; ".join(sorted(duplicated_vins)[:20])
-        raise ValueError(f"Port Stock has duplicated VINs: {examples}")
+        _report(
+            report_progress,
+            f"WARNING: Port Stock duplicated VINs omitted: {len(duplicated_vins):,}",
+        )
+        for vin in sorted(duplicated_vins)[:5]:
+            _report(report_progress, vin)
     if skipped_rows:
         _report(report_progress, f"WARNING: Port Stock skipped {skipped_rows:,} row(s) without VIN or PORT")
-    if not ports_by_vin:
+    if not ports_by_vin and not duplicated_vins:
         raise ValueError("Port Stock has no VINs with PORT values.")
-    return ports_by_vin
+    return ports_by_vin, duplicated_vins
 
 
 def load_port_stock_ports(source_path, report_progress=None, database_path=None):
@@ -441,7 +447,12 @@ def load_port_stock_ports(source_path, report_progress=None, database_path=None)
             signature["mtime_ns"],
         )
         if not source_unchanged:
-            current_ports = _read_port_stock_records(source_path, report_progress)
+            current_ports, duplicated_vins = _read_port_stock_records(source_path, report_progress)
+            if duplicated_vins:
+                connection.executemany(
+                    "DELETE FROM port_stock_history WHERE vin = ?",
+                    [(vin,) for vin in duplicated_vins],
+                )
             connection.executemany(
                 """
                 INSERT INTO port_stock_history (vin, port)

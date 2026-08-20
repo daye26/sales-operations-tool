@@ -53,6 +53,8 @@ La aplicación incluye varios procesos:
 
 Cada proceso solicita los ficheros necesarios, valida su disponibilidad y genera un archivo de resultado en la carpeta de trabajo seleccionada.
 
+La lectura de libros de entrada también comprueba los encabezados esperados para localizar la hoja de datos cuando la pestaña activa no es la correcta, lo que hace la importación más resistente a plantillas con distinta organización.
+
 ## Requisitos
 
 - Python.
