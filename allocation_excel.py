@@ -58,9 +58,18 @@ OUTPUT_COLUMNS = [
     "country",
 ]
 
+OR_WITHOUT_CLIENT_OUTPUT_COLUMNS = [
+    "dealer",
+    "vin",
+    "or_number",
+    "so_number",
+    *OUTPUT_COLUMNS[3:],
+]
+
 HEADER_ALIASES = {
     "vin": ["vin", "vin #", "vin#"],
     "dealer": ["dealer", "customer name"],
+    "so_number": ["sales order #", "sales order", "so number"],
     "or_number": ["or_number", "or number", "order number", "customer reference #"],
     "budget": ["estimated credit unit", "budget"],
     "sales_company": ["sales company"],
@@ -480,6 +489,7 @@ def load_spain_or_reservations_without_client(order_clients):
         indexes = build_indexes(
             columns,
             ["vin", "dealer", "or_number", "budget", "sales_company"],
+            ["so_number"],
         )
         rows = []
         summary = Counter()
@@ -502,6 +512,7 @@ def load_spain_or_reservations_without_client(order_clients):
                     "vin": vin_key(row_value(row, indexes, "vin")),
                     "or_number": or_number,
                     "or_number_key": or_key,
+                    "so_number": format_value(row_value(row, indexes, "so_number")),
                     "budget": row_value(row, indexes, "budget"),
                     "country": "SP",
                 }
@@ -647,6 +658,7 @@ def build_spain_or_without_client_rows(
                 reservation["dealer"],
                 reservation["vin"],
                 reservation["or_number"],
+                reservation.get("so_number", ""),
                 reservation["budget"],
                 "Y" if reservation["or_number_key"] in priority_or_numbers else "",
                 port,
@@ -682,12 +694,12 @@ def write_output(rows, summary, spain_or_without_client_rows=None):
         without_client_rows = spain_or_without_client_rows or []
         worksheet = workbook.create_sheet("OR WITHOUT CLIENT")
         column_widths = calculate_column_widths(
-            OUTPUT_COLUMNS,
+            OR_WITHOUT_CLIENT_OUTPUT_COLUMNS,
             without_client_rows,
             row_values,
             format_value,
         )
-        prepare_worksheet(worksheet, OUTPUT_COLUMNS, column_widths, 40)
+        prepare_worksheet(worksheet, OR_WITHOUT_CLIENT_OUTPUT_COLUMNS, column_widths, 40)
         for row in without_client_rows:
             append_row(worksheet, row_values(row), SHORT_DATE_FORMAT)
         save_workbook_atomically(workbook, OUTPUT_XLSX_PATH)
