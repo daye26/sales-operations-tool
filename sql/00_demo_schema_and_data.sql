@@ -7,6 +7,8 @@ DROP TABLE IF EXISTS vehicle_catalog;
 DROP TABLE IF EXISTS dealer_directory;
 DROP TABLE IF EXISTS sales_orders;
 DROP TABLE IF EXISTS vehicle_inventory;
+DROP TABLE IF EXISTS material_change_requests;
+DROP TABLE IF EXISTS available_material_options;
 
 CREATE TABLE raw_material_codes (
     material_code VARCHAR,
@@ -88,3 +90,39 @@ INSERT INTO vehicle_inventory VALUES
     ('VEH-102', 'GROUP-A', 'BB', CAST(CURRENT_DATE AS VARCHAR), 'AVAILABLE'),
     ('VEH-103', 'GROUP-A', 'AA', CAST(CURRENT_DATE + INTERVAL 45 DAY AS VARCHAR), 'AVAILABLE'),
     ('VEH-104', 'GROUP-B', 'AA', CAST(CURRENT_DATE AS VARCHAR), 'RESERVED');
+
+CREATE TABLE material_change_requests (
+    request_id VARCHAR,
+    requested_material_code VARCHAR,
+    product_family VARCHAR,
+    trim_level VARCHAR,
+    interior_color VARCHAR,
+    exterior_color VARCHAR,
+    model_year VARCHAR,
+    request_date VARCHAR
+);
+
+CREATE TABLE available_material_options (
+    vehicle_id VARCHAR,
+    material_code VARCHAR,
+    product_family VARCHAR,
+    trim_level VARCHAR,
+    interior_color VARCHAR,
+    exterior_color VARCHAR,
+    model_year VARCHAR,
+    availability_date VARCHAR,
+    vehicle_status VARCHAR
+);
+
+INSERT INTO material_change_requests VALUES
+    ('REQ-001', 'MC-A1', 'FAMILY-A', 'STANDARD', 'DARK', 'SILVER', 'MY25', '2026-01-10'),
+    ('REQ-002', 'MC-B1', 'FAMILY-B', 'PREMIUM', 'LIGHT', 'WHITE', 'MY25', '2026-01-11'),
+    ('REQ-003', 'MC-C1', 'FAMILY-C', 'STANDARD', 'DARK', 'WHITE', 'MY25', '2026-01-12');
+
+INSERT INTO available_material_options VALUES
+    ('VEH-201', 'MC-A2', 'FAMILY-A', 'STANDARD', 'DARK', 'SILVER', 'MY25', CAST(CURRENT_DATE AS VARCHAR), 'AVAILABLE'),
+    ('VEH-202', 'MC-A3', 'FAMILY-A', 'STANDARD', 'DARK', 'WHITE', 'MY25', CAST(CURRENT_DATE + INTERVAL 1 DAY AS VARCHAR), 'AVAILABLE'),
+    ('VEH-203', 'MC-A2', 'FAMILY-A', 'STANDARD', 'DARK', 'SILVER', 'MY24', CAST(CURRENT_DATE + INTERVAL 2 DAY AS VARCHAR), 'AVAILABLE'),
+    ('VEH-204', 'MC-B2', 'FAMILY-B', 'PREMIUM', 'LIGHT', 'WHITE', 'MY26', CAST(CURRENT_DATE AS VARCHAR), 'AVAILABLE'),
+    ('VEH-205', 'MC-C2', 'FAMILY-C', 'STANDARD', 'LIGHT', 'WHITE', 'MY25', CAST(CURRENT_DATE AS VARCHAR), 'AVAILABLE'),
+    ('VEH-206', 'MC-B1', 'FAMILY-B', 'PREMIUM', 'LIGHT', 'WHITE', 'MY25', CAST(CURRENT_DATE AS VARCHAR), 'AVAILABLE');

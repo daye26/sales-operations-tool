@@ -20,6 +20,7 @@ The setup script can be run again to reset the fictional sample data.
 - `04_data_quality_audit.sql`: independent validation checks combined with `UNION ALL`.
 - `05_monthly_operations_summary.sql`: monthly operational KPIs built from several source tables.
 - `06_allocation_exceptions.sql`: orders and vehicles that require manual review after allocation checks.
+- `07_material_code_substitution_candidates.sql`: compatible alternative material codes ranked by product attributes and availability.
 
 The examples are designed as portfolio material: table names, identifiers, values, and rules are generic. They demonstrate the technical approach without exposing operational data, local paths, or confidential implementation details.
 
