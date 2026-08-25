@@ -1,6 +1,6 @@
 # SQL portfolio examples
 
-These examples illustrate the SQL techniques that informed parts of the application logic. They are intentionally reconstructed with generic schemas and do not connect to, query, or reproduce an operational environment.
+These examples are derived from SQL workflows used to inform parts of the application logic. They are intentionally anonymized: generic schemas, identifiers, and fictional data replace operational names, local paths, data, and company-specific exceptions. They do not connect to, query, or reproduce an operational environment.
 
 The example queries are read-only `SELECT` statements written for DuckDB. The setup script creates only fictional demonstration tables in the active database.
 
@@ -21,7 +21,9 @@ The setup script can be run again to reset the fictional sample data.
 - `05_monthly_operations_summary.sql`: monthly operational KPIs built from several source tables.
 - `06_allocation_exceptions.sql`: orders and vehicles that require manual review after allocation checks.
 - `07_material_code_substitution_candidates.sql`: compatible alternative material codes ranked by product attributes and availability.
+- `08_leads_funnel_analysis.sql`: daily lead funnel by reporting model, derived from `leads.sql`.
+- `09_free_cars_reconciliation.sql`: consistency checks for free-car records, derived from `not_allocated.sql`.
 
-The examples are designed as portfolio material: table names, identifiers, values, and rules are generic. They demonstrate the technical approach without exposing operational data, local paths, or confidential implementation details.
+The examples are designed as portfolio material: table names, identifiers, values, and rules are anonymized. They preserve the analytical objective of the original workflows without exposing operational data, local paths, confidential identifiers, or company-specific exceptions.
 
 The allocation-ranking example intentionally resolves only first-choice conflicts. Cases that need a fallback allocation are surfaced by `06_allocation_exceptions.sql` for manual review rather than hidden by the example.

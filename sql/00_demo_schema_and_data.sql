@@ -9,6 +9,11 @@ DROP TABLE IF EXISTS sales_orders;
 DROP TABLE IF EXISTS vehicle_inventory;
 DROP TABLE IF EXISTS material_change_requests;
 DROP TABLE IF EXISTS available_material_options;
+DROP TABLE IF EXISTS lead_events;
+DROP TABLE IF EXISTS model_equivalence;
+DROP TABLE IF EXISTS free_car_records;
+DROP TABLE IF EXISTS vehicle_tracking_status;
+DROP TABLE IF EXISTS vehicle_reservations;
 
 CREATE TABLE raw_material_codes (
     material_code VARCHAR,
@@ -126,3 +131,67 @@ INSERT INTO available_material_options VALUES
     ('VEH-204', 'MC-B2', 'FAMILY-B', 'PREMIUM', 'LIGHT', 'WHITE', 'MY26', CAST(CURRENT_DATE AS VARCHAR), 'AVAILABLE'),
     ('VEH-205', 'MC-C2', 'FAMILY-C', 'STANDARD', 'LIGHT', 'WHITE', 'MY25', CAST(CURRENT_DATE AS VARCHAR), 'AVAILABLE'),
     ('VEH-206', 'MC-B1', 'FAMILY-B', 'PREMIUM', 'LIGHT', 'WHITE', 'MY25', CAST(CURRENT_DATE AS VARCHAR), 'AVAILABLE');
+
+CREATE TABLE lead_events (
+    lead_id VARCHAR,
+    created_date VARCHAR,
+    request_type VARCHAR,
+    model_key VARCHAR
+);
+
+CREATE TABLE model_equivalence (
+    model_key VARCHAR,
+    reporting_model VARCHAR
+);
+
+INSERT INTO lead_events VALUES
+    ('LEAD-001', '2026-01-10', 'OFFER REQUEST', 'MODEL-A-INT'),
+    ('LEAD-002', '2026-01-10', 'TEST DRIVE REQUEST', 'MODEL-A-INT'),
+    ('LEAD-003', '2026-01-10', 'DEALER LEADS', 'MODEL-A-INT'),
+    ('LEAD-004', '2026-01-11', 'DEALER LEADS', 'MODEL-A-INT'),
+    ('LEAD-005', '2026-01-10', 'OFFER REQUEST', 'MODEL-B-INT'),
+    ('LEAD-006', '2026-01-11', 'TEST DRIVE REQUEST', 'MODEL-B-INT');
+
+INSERT INTO model_equivalence VALUES
+    ('MODEL-A-INT', 'MODEL-A'),
+    ('MODEL-B-INT', 'MODEL-B');
+
+CREATE TABLE free_car_records (
+    vehicle_id VARCHAR,
+    note VARCHAR,
+    deleted_at VARCHAR
+);
+
+CREATE TABLE vehicle_tracking_status (
+    vehicle_id VARCHAR,
+    vehicle_status VARCHAR,
+    delivery_destination VARCHAR,
+    reserved_order_id VARCHAR,
+    related_order_id VARCHAR,
+    tag VARCHAR,
+    vessel_name VARCHAR
+);
+
+CREATE TABLE vehicle_reservations (
+    vehicle_id VARCHAR
+);
+
+INSERT INTO free_car_records VALUES
+    ('VEH-FC-001', NULL, NULL),
+    ('VEH-FC-002', NULL, NULL),
+    ('VEH-FC-003', NULL, NULL),
+    ('VEH-FC-004', NULL, NULL),
+    ('VEH-FC-005', NULL, NULL),
+    ('VEH-FC-006', NULL, '2026-01-01'),
+    ('VEH-FC-007', NULL, NULL);
+
+INSERT INTO vehicle_tracking_status VALUES
+    ('VEH-FC-001', 'SHIPPING', 'DLR-001', NULL, NULL, NULL, 'VESSEL-A'),
+    ('VEH-FC-002', 'SHIPPING', NULL, NULL, NULL, 'HOLD', 'VESSEL-B'),
+    ('VEH-FC-003', 'OFFLINE', NULL, NULL, NULL, NULL, NULL),
+    ('VEH-FC-005', 'SHIPPING', NULL, NULL, NULL, NULL, 'VESSEL-C'),
+    ('VEH-FC-006', 'SHIPPING', 'DLR-002', NULL, NULL, NULL, 'VESSEL-D'),
+    ('VEH-FC-007', 'SHIPPING', NULL, NULL, NULL, NULL, 'VESSEL-E');
+
+INSERT INTO vehicle_reservations VALUES
+    ('VEH-FC-005');
