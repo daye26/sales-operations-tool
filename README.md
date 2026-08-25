@@ -50,8 +50,11 @@ La aplicación incluye varios procesos:
 - Dealer Stock
 - Vehicle Preallocation
 - Check Free Cars
+- Leads Analysis
 
 Cada proceso solicita los ficheros necesarios, valida su disponibilidad y genera un archivo de resultado en la carpeta de trabajo seleccionada.
+
+El proceso de Leads admite fuentes CSV o Excel de España y Portugal, consolida sus métricas por modelo y periodo, y permite configurar de forma validada la fórmula de una métrica derivada.
 
 La lectura de libros de entrada también comprueba los encabezados esperados para localizar la hoja de datos cuando la pestaña activa no es la correcta, lo que hace la importación más resistente a plantillas con distinta organización.
 
@@ -76,6 +79,14 @@ python -m pip install -r requirements.txt
 python sales_operations_app.py
 ```
 
+## Tests
+
+Las pruebas automatizadas usan datos sintéticos y no requieren archivos operativos:
+
+```powershell
+python -m unittest discover -s tests
+```
+
 Al abrir la aplicación:
 
 1. Selecciona una carpeta de trabajo.
@@ -98,3 +109,4 @@ Consulta `.gitignore` para ver los archivos excluidos del repositorio.
 - `dealer_stock_excel.py`: generación de dealer stock.
 - `vehicle_preallocation_excel.py`: preasignación de vehículos.
 - `check_free_cars_excel.py`: comprobación de vehículos libres.
+- `leads_analysis_excel.py`: consolidación de leads y generación de informes por periodo.

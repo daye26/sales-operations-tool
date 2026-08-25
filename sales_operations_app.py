@@ -16,12 +16,14 @@ import asignaciones_excel as allocation_engine
 import allocation_excel as reservation_allocation_engine
 import check_free_cars_excel as check_free_cars_engine
 import dealer_stock_excel as dealer_stock_engine
+import leads_analysis_excel as leads_analysis_engine
+import popup_positioning
 import vehicle_preallocation_excel as vehicle_preallocation_engine
 
 
 engine = allocation_engine
 
-APP_VERSION = "2.0"
+APP_VERSION = "2.1"
 APP_TITLE = f"Sales Operations Tool {APP_VERSION}"
 CONFIG_FILENAME = "sales_operations_tool_local_config.json"
 PROCESS_ALLOCATION = "allocation"
@@ -29,12 +31,14 @@ PROCESS_RESERVATION_ALLOCATION = "reservation_allocation"
 PROCESS_DEALER_STOCK = "dealer_stock"
 PROCESS_VEHICLE_PREALLOCATION = "vehicle_preallocation"
 PROCESS_CHECK_FREE_CARS = "check_free_cars"
+PROCESS_LEADS_ANALYSIS = "leads_analysis"
 PROCESS_LABELS = {
     PROCESS_ALLOCATION: "Preallocation",
     PROCESS_RESERVATION_ALLOCATION: "Vehicle Allocation",
     PROCESS_DEALER_STOCK: "Dealer Stock",
     PROCESS_VEHICLE_PREALLOCATION: "Vehicle Preallocation",
     PROCESS_CHECK_FREE_CARS: "Check Free Cars",
+    PROCESS_LEADS_ANALYSIS: "Leads Analysis",
 }
 LABEL_TO_PROCESS = {label: key for key, label in PROCESS_LABELS.items()}
 SHARED_FILE_SPECS = [
@@ -51,6 +55,9 @@ SHARED_FILE_SPECS = [
     ("unavailable", "Unavailable", "unavailable.xlsx"),
     ("derogation", "Derogation list", "derogation_list.xlsx"),
     ("logistics_db", "Logistics database", "BASE DE DATOS LOGISTICA.xlsx"),
+    ("leads_sp", "Leads Spain", "Leads_SP.csv"),
+    ("leads_pt", "Leads Portugal", "Leads_PT.csv"),
+    ("model_eq", "Model equivalence", "model_eq.xlsx"),
 ]
 SHARED_FILE_SPECS_BY_KEY = {key: (key, label, file_name) for key, label, file_name in SHARED_FILE_SPECS}
 ALLOCATION_FILE_KEYS = [
@@ -98,6 +105,7 @@ CHECK_FREE_CARS_FILE_KEYS = [
     "unavailable",
     "logistics_db",
 ]
+LEADS_ANALYSIS_FILE_KEYS = ["leads_sp", "leads_pt", "model_eq"]
 PROCESS_CONFIGS = {
     PROCESS_ALLOCATION: {
         "label": PROCESS_LABELS[PROCESS_ALLOCATION],
@@ -129,8 +137,15 @@ PROCESS_CONFIGS = {
         "file_keys": CHECK_FREE_CARS_FILE_KEYS,
         "engine_name": "check free cars",
     },
+    PROCESS_LEADS_ANALYSIS: {
+        "label": PROCESS_LABELS[PROCESS_LEADS_ANALYSIS],
+        "output_filename": "leads_analysis_result.xlsx",
+        "file_keys": LEADS_ANALYSIS_FILE_KEYS,
+        "engine_name": "leads analysis",
+    },
 }
 FILE_SPECS = SHARED_FILE_SPECS
+LEADS_SOURCE_FILE_KEYS = set(LEADS_ANALYSIS_FILE_KEYS)
 HIDDEN_RESULT_SECTIONS = {"MATERIAL_CODE_MISMATCHES", "FINAL_MATCHES"}
 LOG_SECTION_HEADERS = {"INPUT_SUMMARY", "PROCESS_SUMMARY"}
 WARNING_PREFIXES = ("WARNING:", "SOFT WARNING:")
@@ -561,6 +576,37 @@ def run_check_free_cars_engine(file_paths, output_path, progress_callback=None):
         check_free_cars_engine.PROGRESS_CALLBACK = old_progress_callback
 
 
+def run_leads_analysis_engine(
+    source_paths,
+    output_path,
+    start_date,
+    end_date,
+    progress_callback=None,
+    test_drive_formula=leads_analysis_engine.DEFAULT_TEST_DRIVE_FORMULA,
+):
+    old_paths = leads_analysis_engine.EXCEL_PATHS.copy()
+    old_output = leads_analysis_engine.OUTPUT_XLSX_PATH
+    old_progress_callback = leads_analysis_engine.PROGRESS_CALLBACK
+
+    try:
+        leads_analysis_engine.EXCEL_PATHS.clear()
+        leads_analysis_engine.EXCEL_PATHS.update(
+            {
+                "leads_sp": Path(source_paths["leads_sp"]),
+                "leads_pt": Path(source_paths["leads_pt"]),
+                "model_eq": Path(source_paths["model_eq"]),
+            }
+        )
+        leads_analysis_engine.OUTPUT_XLSX_PATH = Path(output_path)
+        leads_analysis_engine.PROGRESS_CALLBACK = progress_callback
+        leads_analysis_engine.main(start_date, end_date, test_drive_formula)
+    finally:
+        leads_analysis_engine.EXCEL_PATHS.clear()
+        leads_analysis_engine.EXCEL_PATHS.update(old_paths)
+        leads_analysis_engine.OUTPUT_XLSX_PATH = old_output
+        leads_analysis_engine.PROGRESS_CALLBACK = old_progress_callback
+
+
 def run_reservation_allocation_engine(
     file_paths,
     output_path,
@@ -669,6 +715,15 @@ def is_log_boundary(line):
     )
 
 
+def selectable_filetypes_for_key(key):
+    if key in LEADS_SOURCE_FILE_KEYS:
+        return [
+            ("Excel and CSV files", "*.xlsx *.xlsm *.xltx *.xltm *.csv"),
+            ("All files", "*.*"),
+        ]
+    return [("Excel files", "*.xlsx *.xlsm *.xltx *.xltm"), ("All files", "*.*")]
+
+
 def extract_warning_blocks(log):
     blocks = []
     current_block = None
@@ -716,6 +771,9 @@ class SalesOperationsApp(tk.Tk):
         self.file_names = {}
         self.manual_settings_text = default_manual_settings_text()
         self.preallocation_settings = default_preallocation_settings()
+        self.leads_start_date = ""
+        self.leads_end_date = ""
+        self.leads_test_drive_formula = leads_analysis_engine.DEFAULT_TEST_DRIVE_FORMULA
         self.setting_text_widgets = {}
         self.preallocation_mode_var = None
         self.preallocation_days_var = None
@@ -762,6 +820,12 @@ class SalesOperationsApp(tk.Tk):
             self.process_var.set(selected_process)
         self.manual_settings_text = normalize_manual_settings_text(data.get("manual_settings", {}))
         self.preallocation_settings = normalize_preallocation_settings(data.get("preallocation_window", {}))
+        self.leads_start_date = str(data.get("leads_start_date") or "").strip()
+        self.leads_end_date = str(data.get("leads_end_date") or "").strip()
+        self.leads_test_drive_formula = (
+            str(data.get("leads_test_drive_formula") or "").strip()
+            or leads_analysis_engine.DEFAULT_TEST_DRIVE_FORMULA
+        )
         self.overrides = self.normalize_overrides(data.get("overrides", {}))
         self.file_names = self.normalize_file_names(data.get("file_names", {}))
 
@@ -836,6 +900,9 @@ class SalesOperationsApp(tk.Tk):
             "file_names": self.file_names,
             "manual_settings": normalize_manual_settings_text(self.current_manual_settings_text()),
             "preallocation_window": preallocation_window,
+            "leads_start_date": self.leads_start_date,
+            "leads_end_date": self.leads_end_date,
+            "leads_test_drive_formula": self.leads_test_drive_formula,
         }
         path.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
@@ -1267,9 +1334,9 @@ class SalesOperationsApp(tk.Tk):
         initial = self.resolved_path(key)
         working_folder = self.working_folder() or Path.home()
         selected = filedialog.askopenfilename(
-            title="Select Excel file",
+            title="Select source file",
             initialdir=str(initial.parent if initial.parent.exists() else working_folder),
-            filetypes=[("Excel files", "*.xlsx *.xlsm *.xltx *.xltm"), ("All files", "*.*")],
+            filetypes=selectable_filetypes_for_key(key),
         )
         if not selected:
             return
@@ -1422,11 +1489,113 @@ class SalesOperationsApp(tk.Tk):
 
         return paths, missing
 
+    def prompt_leads_period(self):
+        selected_period = None
+        window = tk.Toplevel(self)
+        window.title("Leads analysis period")
+        window.resizable(False, False)
+        window.transient(self)
+        window.grab_set()
+
+        ttk.Label(window, text="Start date (dd/mm/yyyy)").grid(
+            row=0, column=0, sticky="w", padx=(14, 8), pady=(14, 8)
+        )
+        start_var = tk.StringVar(value=self.leads_start_date)
+        start_entry = ttk.Entry(window, textvariable=start_var, width=18)
+        start_entry.grid(row=0, column=1, padx=(0, 14), pady=(14, 8))
+        ttk.Label(window, text="End date (dd/mm/yyyy)").grid(
+            row=1, column=0, sticky="w", padx=(14, 8), pady=(0, 8)
+        )
+        end_var = tk.StringVar(value=self.leads_end_date)
+        end_entry = ttk.Entry(window, textvariable=end_var, width=18)
+        end_entry.grid(row=1, column=1, padx=(0, 14), pady=(0, 8))
+
+        ttk.Label(window, text="Test drive formula").grid(
+            row=2, column=0, sticky="w", padx=(14, 8), pady=(0, 6)
+        )
+        formula_var = tk.StringVar(value=self.leads_test_drive_formula)
+        formula_entry = ttk.Entry(window, textvariable=formula_var, width=68)
+        formula_entry.grid(row=2, column=1, sticky="ew", padx=(0, 14), pady=(0, 6))
+
+        def insert_formula_token(token):
+            try:
+                formula_entry.delete(tk.SEL_FIRST, tk.SEL_LAST)
+            except tk.TclError:
+                pass
+            formula_entry.insert(tk.INSERT, token)
+            formula_entry.focus_set()
+
+        ttk.Label(window, text="Allowed variables").grid(
+            row=3, column=0, columnspan=2, sticky="w", padx=14, pady=(2, 4)
+        )
+        variables_frame = ttk.Frame(window)
+        variables_frame.grid(row=4, column=0, columnspan=2, sticky="w", padx=14, pady=(0, 8))
+        for column, variable in enumerate(leads_analysis_engine.TEST_DRIVE_FORMULA_VARIABLES):
+            ttk.Button(
+                variables_frame,
+                text=variable,
+                command=lambda token=variable: insert_formula_token(token),
+            ).grid(row=0, column=column, padx=(0, 6))
+
+        ttk.Label(window, text="Allowed operations").grid(
+            row=5, column=0, columnspan=2, sticky="w", padx=14, pady=(0, 4)
+        )
+        operations_frame = ttk.Frame(window)
+        operations_frame.grid(row=6, column=0, columnspan=2, sticky="w", padx=14, pady=(0, 10))
+        for column, token in enumerate(("+", "-", "*", "/", "(", ")")):
+            ttk.Button(
+                operations_frame,
+                text=token,
+                width=4,
+                command=lambda token=token: insert_formula_token(token),
+            ).grid(row=0, column=column, padx=(0, 4))
+        ttk.Button(
+            operations_frame,
+            text="Clear",
+            command=lambda: formula_var.set(""),
+        ).grid(row=0, column=6, padx=(4, 0))
+
+        def confirm_period():
+            nonlocal selected_period
+            try:
+                start_date = leads_analysis_engine.parse_period_date(start_var.get())
+                end_date = leads_analysis_engine.parse_period_date(end_var.get())
+                if start_date > end_date:
+                    raise ValueError("Start date cannot be after end date.")
+                test_drive_formula, _ = leads_analysis_engine.parse_test_drive_formula(
+                    formula_var.get()
+                )
+            except ValueError as exc:
+                messagebox.showerror(APP_TITLE, str(exc), parent=window)
+                return
+
+            self.leads_start_date = start_date.strftime("%d/%m/%Y")
+            self.leads_end_date = end_date.strftime("%d/%m/%Y")
+            self.leads_test_drive_formula = test_drive_formula
+            self.save_config()
+            selected_period = (start_date, end_date, test_drive_formula)
+            window.destroy()
+
+        actions = ttk.Frame(window)
+        actions.grid(row=7, column=0, columnspan=2, sticky="w", padx=14, pady=(0, 14))
+        ttk.Button(actions, text="Cancel", command=window.destroy).grid(row=0, column=0)
+        ttk.Button(actions, text="Run", command=confirm_period).grid(row=0, column=1, padx=(8, 0))
+        window.protocol("WM_DELETE_WINDOW", window.destroy)
+        popup_positioning.place_over_parent(window, self)
+        start_entry.focus_set()
+        self.wait_window(window)
+        return selected_period
+
     def run_allocation(self):
         if self.worker and self.worker.is_alive():
             return
 
         process = self.current_process()
+        leads_period = None
+        if process == PROCESS_LEADS_ANALYSIS:
+            leads_period = self.prompt_leads_period()
+            if leads_period is None:
+                return
 
         paths, missing = self.validate_files()
         if missing:
@@ -1469,6 +1638,7 @@ class SalesOperationsApp(tk.Tk):
                 manual_settings,
                 preallocation_settings,
                 dealer_stock_settings,
+                leads_period,
             ),
             daemon=True,
         )
@@ -1483,6 +1653,7 @@ class SalesOperationsApp(tk.Tk):
         manual_settings,
         preallocation_settings,
         dealer_stock_settings,
+        leads_period,
     ):
         buffer = FilteredRunLog()
         try:
@@ -1519,6 +1690,15 @@ class SalesOperationsApp(tk.Tk):
                     run_check_free_cars_engine(
                         paths,
                         output_path,
+                        progress_callback=self.progress_queue.put,
+                    )
+                elif process == PROCESS_LEADS_ANALYSIS:
+                    run_leads_analysis_engine(
+                        paths,
+                        output_path,
+                        start_date=leads_period[0],
+                        end_date=leads_period[1],
+                        test_drive_formula=leads_period[2],
                         progress_callback=self.progress_queue.put,
                     )
                 else:
