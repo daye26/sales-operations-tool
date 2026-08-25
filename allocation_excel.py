@@ -9,11 +9,12 @@ import warnings
 
 from openpyxl import Workbook, load_workbook
 
-import asignaciones_excel as vehicle_tracking_cache
+import asignaciones_excel as preallocation_engine
 from excel_sheet_selection import select_active_then_sheet1
 import free_cars_history
 from excel_output import append_row, calculate_column_widths, prepare_worksheet, save_workbook_atomically
 from port_resolution import resolve_port
+import tabular_normalization as tabular
 from warning_samples import WarningSamples
 
 
@@ -24,8 +25,8 @@ OUTPUT_XLSX_PATH = BASE_EXCEL_DIR / "vehicle_allocation_result.xlsx"
 PROGRESS_CALLBACK = None
 SHORT_DATE_FORMAT = "yyyy-mm-dd"
 ALLOCATION_WINDOW_MODES = {"eta_days", "gate_in"}
-ALLOCATION_WINDOW_MODE = vehicle_tracking_cache.PREALLOCATION_WINDOW_MODE
-ALLOCATION_WINDOW_DAYS = vehicle_tracking_cache.PREALLOCATION_WINDOW_DAYS
+ALLOCATION_WINDOW_MODE = preallocation_engine.PREALLOCATION_WINDOW_MODE
+ALLOCATION_WINDOW_DAYS = preallocation_engine.PREALLOCATION_WINDOW_DAYS
 ALLOCATION_ETA_LIMIT = date.today() + timedelta(days=ALLOCATION_WINDOW_DAYS)
 
 EXCEL_PATHS = {
@@ -87,8 +88,7 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 
-def is_missing(value):
-    return value is None or str(value).strip() == ""
+is_missing = tabular.is_missing
 
 
 def report_progress(message):
@@ -132,58 +132,40 @@ def allocation_window_label():
     return f"eta_before_{ALLOCATION_WINDOW_DAYS}_days"
 
 
-def format_value(value):
-    if is_missing(value):
-        return ""
-    return str(value).replace("\r", " ").replace("\n", " ").strip()
-
-
-def normalize_header(value):
-    text = unicodedata.normalize("NFKC", format_value(value)).lower()
-    text = text.replace("-", " ").replace("_", " ")
-    return re.sub(r"\s+", " ", text).strip()
-
-
-def text_key(value):
-    text = unicodedata.normalize("NFD", format_value(value).upper())
-    text = "".join(char for char in text if unicodedata.category(char) != "Mn")
-    return re.sub(r"\s+", " ", text).strip()
-
-
-def code_key(value):
-    return format_value(value).upper()
-
-
-def vin_key(value):
-    return code_key(value)
+format_value = tabular.format_value
+normalize_header = tabular.normalize_header
+text_key = tabular.text_key
+code_key = tabular.code_key
+vin_key = tabular.vin_key
 
 
 def or_number_key(value):
     return format_value(value).upper().replace(" ", "")[:9]
 
 
+def sales_order_key(value):
+    return preallocation_engine.sales_order_key(value)
+
+
+def priority_reference_matches_reservation(reservation, priority_references):
+    """Return whether a reservation matches the mixed Quick Allocate reference list."""
+    if isinstance(priority_references, set):
+        priority_references = {"or_ow": priority_references, "sales_order": set()}
+    return (
+        reservation.get("or_number_key", "") in priority_references["or_ow"]
+        or reservation.get("so_number_key", "") in priority_references["sales_order"]
+    )
+
+
 def header_index(columns, column_name, required=True):
-    aliases = {normalize_header(alias) for alias in HEADER_ALIASES[column_name]}
-    for index, column in enumerate(columns):
-        if normalize_header(column) in aliases:
-            return index
-    if required:
-        raise ValueError(f"Missing column {column_name}. Headers: {columns}")
-    return None
+    return tabular.header_index(columns, HEADER_ALIASES, column_name, required)
 
 
 def build_indexes(columns, required_columns, optional_columns=None):
-    indexes = {column: header_index(columns, column) for column in required_columns}
-    for column in optional_columns or []:
-        indexes[column] = header_index(columns, column, required=False)
-    return indexes
+    return tabular.build_indexes(columns, HEADER_ALIASES, required_columns, optional_columns)
 
 
-def row_value(row, indexes, column):
-    index = indexes.get(column)
-    if index is None or index >= len(row):
-        return None
-    return row[index]
+row_value = tabular.row_value
 
 
 def open_sheet(key):
@@ -269,19 +251,19 @@ def print_warning(title, rows):
 
 
 def load_vehicle_tracking():
-    old_path = vehicle_tracking_cache.EXCEL_PATHS["vehicle_tracking"]
-    old_callback = vehicle_tracking_cache.PROGRESS_CALLBACK
+    old_path = preallocation_engine.EXCEL_PATHS["vehicle_tracking"]
+    old_callback = preallocation_engine.PROGRESS_CALLBACK
     try:
-        vehicle_tracking_cache.EXCEL_PATHS["vehicle_tracking"] = EXCEL_PATHS["vehicle_tracking"]
-        vehicle_tracking_cache.PROGRESS_CALLBACK = PROGRESS_CALLBACK or report_progress
-        return vehicle_tracking_cache.load_vehicle_tracking()
+        preallocation_engine.EXCEL_PATHS["vehicle_tracking"] = EXCEL_PATHS["vehicle_tracking"]
+        preallocation_engine.PROGRESS_CALLBACK = PROGRESS_CALLBACK or report_progress
+        return preallocation_engine.load_vehicle_tracking()
     finally:
-        vehicle_tracking_cache.EXCEL_PATHS["vehicle_tracking"] = old_path
-        vehicle_tracking_cache.PROGRESS_CALLBACK = old_callback
+        preallocation_engine.EXCEL_PATHS["vehicle_tracking"] = old_path
+        preallocation_engine.PROGRESS_CALLBACK = old_callback
 
 
 def clear_vehicle_tracking_cache():
-    return vehicle_tracking_cache.clear_vehicle_tracking_cache()
+    return preallocation_engine.clear_vehicle_tracking_cache()
 
 
 def load_mc_norm():
@@ -386,21 +368,27 @@ def load_not_allocated_ports():
         workbook.close()
 
 
-def load_priority_or_numbers():
-    report_progress("Loading Quick Allocation OR numbers...")
+def load_priority_references():
+    report_progress("Loading Quick Allocate references...")
     workbook, worksheet = open_sheet("priority_orders")
     try:
         columns = read_header(worksheet)
         indexes = build_indexes(columns, ["or_number"])
-        keys = set()
+        priority_references = {"or_ow": set(), "sales_order": set()}
         for row in worksheet.iter_rows(min_row=2, values_only=True):
             if not any(not is_missing(value) for value in row):
                 continue
-            key = or_number_key(row_value(row, indexes, "or_number"))
-            if key:
-                keys.add(key)
-        report_progress(f"Quick Allocation OR keys loaded: {len(keys):,}")
-        return keys
+            reference_type, key = preallocation_engine.priority_reference(
+                row_value(row, indexes, "or_number")
+            )
+            if reference_type is not None:
+                priority_references[reference_type].add(key)
+        report_progress(
+            "Quick Allocate references loaded: "
+            f"{len(priority_references['or_ow']):,} OR/OW and "
+            f"{len(priority_references['sales_order']):,} Sales Order"
+        )
+        return priority_references
     finally:
         workbook.close()
 
@@ -440,6 +428,7 @@ def load_reservations():
         indexes = build_indexes(
             columns,
             ["vin", "dealer", "or_number", "budget", "sales_company"],
+            ["so_number"],
         )
         rows = []
         summary = Counter()
@@ -470,6 +459,8 @@ def load_reservations():
                     "vin": vin,
                     "or_number": or_number,
                     "or_number_key": or_number_key(or_number),
+                    "so_number": format_value(row_value(row, indexes, "so_number")),
+                    "so_number_key": sales_order_key(row_value(row, indexes, "so_number")),
                     "budget": budget,
                     "country": country,
                 }
@@ -513,6 +504,7 @@ def load_spain_or_reservations_without_client(order_clients):
                     "or_number": or_number,
                     "or_number_key": or_key,
                     "so_number": format_value(row_value(row, indexes, "so_number")),
+                    "so_number_key": sales_order_key(row_value(row, indexes, "so_number")),
                     "budget": row_value(row, indexes, "budget"),
                     "country": "SP",
                 }
@@ -538,7 +530,7 @@ def build_rows(
     vehicle_tracking,
     mc_norm,
     newport_ports,
-    priority_or_numbers,
+    priority_references,
     order_clients,
     port_stock_ports=None,
     not_allocated_ports=None,
@@ -602,7 +594,7 @@ def build_rows(
                 reservation["vin"],
                 reservation["or_number"],
                 budget_output_value(reservation["budget"]),
-                "Y" if reservation["or_number_key"] in priority_or_numbers else "",
+                "Y" if priority_reference_matches_reservation(reservation, priority_references) else "",
                 port,
                 excel_date_value(tracking.get("gate_in")),
                 excel_date_value(eta),
@@ -635,7 +627,7 @@ def build_spain_or_without_client_rows(
     vehicle_tracking,
     mc_norm,
     newport_ports,
-    priority_or_numbers,
+    priority_references,
     port_stock_ports=None,
     not_allocated_ports=None,
 ):
@@ -660,7 +652,7 @@ def build_spain_or_without_client_rows(
                 reservation["or_number"],
                 reservation.get("so_number", ""),
                 reservation["budget"],
-                "Y" if reservation["or_number_key"] in priority_or_numbers else "",
+                "Y" if priority_reference_matches_reservation(reservation, priority_references) else "",
                 port,
                 excel_date_value(tracking.get("gate_in")),
                 excel_date_value(tracking.get("eta")),
@@ -743,7 +735,7 @@ def main():
     newport_ports = load_newport_ports()
     not_allocated_ports = load_not_allocated_ports()
     port_stock_ports = load_port_stock_ports()
-    priority_or_numbers = load_priority_or_numbers()
+    priority_references = load_priority_references()
     order_clients = load_order_clients()
     reservations, summary = load_reservations()
     spain_or_without_client_reservations, without_client_summary = load_spain_or_reservations_without_client(
@@ -754,7 +746,7 @@ def main():
         vehicle_tracking,
         mc_norm,
         newport_ports,
-        priority_or_numbers,
+        priority_references,
         order_clients,
         port_stock_ports,
         not_allocated_ports,
@@ -766,7 +758,7 @@ def main():
         vehicle_tracking,
         mc_norm,
         newport_ports,
-        priority_or_numbers,
+        priority_references,
         port_stock_ports,
         not_allocated_ports,
     )

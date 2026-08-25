@@ -49,7 +49,7 @@ SHARED_FILE_SPECS = [
     ("vehicle_tracking", "Vehicle tracking", "VehicleTracking.xlsx"),
     ("newport", "New port", "NEWport.xlsx"),
     ("reservation", "Reservations", "Vehicle_Reservation.xlsx"),
-    ("priority_orders", "Priority orders", "quick allocate.xlsx"),
+    ("priority_orders", "Priority references (OR/OW/SO)", "quick allocate.xlsx"),
     ("orders", "Dealer orders", "Dealer Orders.xlsx"),
     ("registration", "Registration", "ANT.xlsx"),
     ("unavailable", "Unavailable", "unavailable.xlsx"),
@@ -426,14 +426,30 @@ def apply_dealer_stock_settings(settings):
     dealer_stock_engine.OLD_DEROGATION_CUTOFF = settings["old_derogation_cutoff"]
 
 
+@contextlib.contextmanager
+def temporary_engine_configuration(engine_module, mapped_paths, output_path, progress_callback):
+    """Apply run-specific settings and always restore the engine's shared state."""
+    old_paths = engine_module.EXCEL_PATHS.copy()
+    old_output = engine_module.OUTPUT_XLSX_PATH
+    old_progress_callback = engine_module.PROGRESS_CALLBACK
+    try:
+        engine_module.EXCEL_PATHS.clear()
+        engine_module.EXCEL_PATHS.update(mapped_paths)
+        engine_module.OUTPUT_XLSX_PATH = Path(output_path)
+        engine_module.PROGRESS_CALLBACK = progress_callback
+        yield
+    finally:
+        engine_module.EXCEL_PATHS.clear()
+        engine_module.EXCEL_PATHS.update(old_paths)
+        engine_module.OUTPUT_XLSX_PATH = old_output
+        engine_module.PROGRESS_CALLBACK = old_progress_callback
+
+
 def run_engine(file_paths, output_path, manual_settings=None, preallocation_settings=None, progress_callback=None):
-    old_paths = engine.EXCEL_PATHS.copy()
-    old_output = engine.OUTPUT_XLSX_PATH
     old_preallocation_mode = engine.PREALLOCATION_WINDOW_MODE
     old_preallocation_days = engine.PREALLOCATION_WINDOW_DAYS
     old_non_or_eta_limit = engine.NON_OR_ETA_BEFORE_LIMIT
     old_reservation_eta_limit = engine.RESERVATION_ETA_LIMIT
-    old_progress_callback = engine.PROGRESS_CALLBACK
     old_fixed_orders = engine.FIXED_MATERIAL_CODE_SALES_ORDERS.copy()
     old_fixed_order_keys = engine.FIXED_MATERIAL_CODE_SALES_ORDER_KEYS.copy()
     old_blocked_p_series = engine.STEP4_BLOCKED_P_SERIES.copy()
@@ -456,30 +472,22 @@ def run_engine(file_paths, output_path, manual_settings=None, preallocation_sett
             "reservations": Path(file_paths["reservation"]),
             "priority_orders": Path(file_paths["priority_orders"]),
         }
-        engine.EXCEL_PATHS.clear()
-        engine.EXCEL_PATHS.update(mapped_paths)
-        engine.OUTPUT_XLSX_PATH = Path(output_path)
-        engine.PROGRESS_CALLBACK = progress_callback
-        if manual_settings is not None:
-            apply_manual_settings(manual_settings)
+        with temporary_engine_configuration(engine, mapped_paths, output_path, progress_callback):
+            if manual_settings is not None:
+                apply_manual_settings(manual_settings)
 
-        preallocation_settings = normalize_preallocation_settings(preallocation_settings)
-        engine.configure_preallocation_window(
-            mode=preallocation_settings["mode"],
-            days=int(preallocation_settings["days"]),
-            today=date.today(),
-        )
-
-        engine.main()
+            preallocation_settings = normalize_preallocation_settings(preallocation_settings)
+            engine.configure_preallocation_window(
+                mode=preallocation_settings["mode"],
+                days=int(preallocation_settings["days"]),
+                today=date.today(),
+            )
+            engine.main()
     finally:
-        engine.EXCEL_PATHS.clear()
-        engine.EXCEL_PATHS.update(old_paths)
-        engine.OUTPUT_XLSX_PATH = old_output
         engine.PREALLOCATION_WINDOW_MODE = old_preallocation_mode
         engine.PREALLOCATION_WINDOW_DAYS = old_preallocation_days
         engine.NON_OR_ETA_BEFORE_LIMIT = old_non_or_eta_limit
         engine.RESERVATION_ETA_LIMIT = old_reservation_eta_limit
-        engine.PROGRESS_CALLBACK = old_progress_callback
         engine.FIXED_MATERIAL_CODE_SALES_ORDERS = old_fixed_orders
         engine.FIXED_MATERIAL_CODE_SALES_ORDER_KEYS = old_fixed_order_keys
         engine.STEP4_BLOCKED_P_SERIES = old_blocked_p_series
@@ -492,9 +500,6 @@ def run_engine(file_paths, output_path, manual_settings=None, preallocation_sett
 
 
 def run_dealer_stock_engine(file_paths, output_path, dealer_stock_settings=None, progress_callback=None):
-    old_paths = dealer_stock_engine.EXCEL_PATHS.copy()
-    old_output = dealer_stock_engine.OUTPUT_XLSX_PATH
-    old_progress_callback = dealer_stock_engine.PROGRESS_CALLBACK
     old_derogation_cutoff = dealer_stock_engine.OLD_DEROGATION_CUTOFF
 
     try:
@@ -511,69 +516,42 @@ def run_dealer_stock_engine(file_paths, output_path, dealer_stock_settings=None,
             "in_port": Path(file_paths["logistics_db"]),
             "already_gate_out": Path(file_paths["logistics_db"]),
         }
-        dealer_stock_engine.EXCEL_PATHS.clear()
-        dealer_stock_engine.EXCEL_PATHS.update(mapped_paths)
-        dealer_stock_engine.OUTPUT_XLSX_PATH = Path(output_path)
-        dealer_stock_engine.PROGRESS_CALLBACK = progress_callback
-        if dealer_stock_settings is not None:
-            apply_dealer_stock_settings(dealer_stock_settings)
-        dealer_stock_engine.main()
+        with temporary_engine_configuration(
+            dealer_stock_engine, mapped_paths, output_path, progress_callback
+        ):
+            if dealer_stock_settings is not None:
+                apply_dealer_stock_settings(dealer_stock_settings)
+            dealer_stock_engine.main()
     finally:
-        dealer_stock_engine.EXCEL_PATHS.clear()
-        dealer_stock_engine.EXCEL_PATHS.update(old_paths)
-        dealer_stock_engine.OUTPUT_XLSX_PATH = old_output
-        dealer_stock_engine.PROGRESS_CALLBACK = old_progress_callback
         dealer_stock_engine.OLD_DEROGATION_CUTOFF = old_derogation_cutoff
 
 
 def run_vehicle_preallocation_engine(file_paths, output_path, progress_callback=None):
-    old_paths = vehicle_preallocation_engine.EXCEL_PATHS.copy()
-    old_output = vehicle_preallocation_engine.OUTPUT_XLSX_PATH
-    old_progress_callback = vehicle_preallocation_engine.PROGRESS_CALLBACK
-
-    try:
-        mapped_paths = {
-            "reservation": Path(file_paths["reservation"]),
-            "vehicle_tracking": Path(file_paths["vehicle_tracking"]),
-            "mc_norm": Path(file_paths["mc_norm"]),
-            "logistics_db": Path(file_paths["logistics_db"]),
-        }
-        vehicle_preallocation_engine.EXCEL_PATHS.clear()
-        vehicle_preallocation_engine.EXCEL_PATHS.update(mapped_paths)
-        vehicle_preallocation_engine.OUTPUT_XLSX_PATH = Path(output_path)
-        vehicle_preallocation_engine.PROGRESS_CALLBACK = progress_callback
+    mapped_paths = {
+        "reservation": Path(file_paths["reservation"]),
+        "vehicle_tracking": Path(file_paths["vehicle_tracking"]),
+        "mc_norm": Path(file_paths["mc_norm"]),
+        "logistics_db": Path(file_paths["logistics_db"]),
+    }
+    with temporary_engine_configuration(
+        vehicle_preallocation_engine, mapped_paths, output_path, progress_callback
+    ):
         vehicle_preallocation_engine.main()
-    finally:
-        vehicle_preallocation_engine.EXCEL_PATHS.clear()
-        vehicle_preallocation_engine.EXCEL_PATHS.update(old_paths)
-        vehicle_preallocation_engine.OUTPUT_XLSX_PATH = old_output
-        vehicle_preallocation_engine.PROGRESS_CALLBACK = old_progress_callback
 
 
 def run_check_free_cars_engine(file_paths, output_path, progress_callback=None):
-    old_paths = check_free_cars_engine.EXCEL_PATHS.copy()
-    old_output = check_free_cars_engine.OUTPUT_XLSX_PATH
-    old_progress_callback = check_free_cars_engine.PROGRESS_CALLBACK
-
-    try:
-        mapped_paths = {
-            "vehicle_tracking": Path(file_paths["vehicle_tracking"]),
-            "mc_norm": Path(file_paths["mc_norm"]),
-            "not_allocated": Path(file_paths["not_allocated"]),
-            "reservation": Path(file_paths["reservation"]),
-            "unavailable": Path(file_paths["unavailable"]),
-            "logistics_db": Path(file_paths["logistics_db"]),
-        }
-        check_free_cars_engine.EXCEL_PATHS.clear()
-        check_free_cars_engine.EXCEL_PATHS.update(mapped_paths)
-        check_free_cars_engine.OUTPUT_XLSX_PATH = Path(output_path)
-        check_free_cars_engine.PROGRESS_CALLBACK = progress_callback
+    mapped_paths = {
+        "vehicle_tracking": Path(file_paths["vehicle_tracking"]),
+        "mc_norm": Path(file_paths["mc_norm"]),
+        "not_allocated": Path(file_paths["not_allocated"]),
+        "reservation": Path(file_paths["reservation"]),
+        "unavailable": Path(file_paths["unavailable"]),
+        "logistics_db": Path(file_paths["logistics_db"]),
+    }
+    with temporary_engine_configuration(
+        check_free_cars_engine, mapped_paths, output_path, progress_callback
+    ):
         check_free_cars_engine.main()
-    finally:
-        check_free_cars_engine.EXCEL_PATHS.clear()
-        check_free_cars_engine.EXCEL_PATHS.update(old_paths)
-        check_free_cars_engine.OUTPUT_XLSX_PATH = old_output
-        check_free_cars_engine.PROGRESS_CALLBACK = old_progress_callback
 
 
 def run_leads_analysis_engine(
@@ -584,27 +562,15 @@ def run_leads_analysis_engine(
     progress_callback=None,
     test_drive_formula=leads_analysis_engine.DEFAULT_TEST_DRIVE_FORMULA,
 ):
-    old_paths = leads_analysis_engine.EXCEL_PATHS.copy()
-    old_output = leads_analysis_engine.OUTPUT_XLSX_PATH
-    old_progress_callback = leads_analysis_engine.PROGRESS_CALLBACK
-
-    try:
-        leads_analysis_engine.EXCEL_PATHS.clear()
-        leads_analysis_engine.EXCEL_PATHS.update(
-            {
-                "leads_sp": Path(source_paths["leads_sp"]),
-                "leads_pt": Path(source_paths["leads_pt"]),
-                "model_eq": Path(source_paths["model_eq"]),
-            }
-        )
-        leads_analysis_engine.OUTPUT_XLSX_PATH = Path(output_path)
-        leads_analysis_engine.PROGRESS_CALLBACK = progress_callback
+    mapped_paths = {
+        "leads_sp": Path(source_paths["leads_sp"]),
+        "leads_pt": Path(source_paths["leads_pt"]),
+        "model_eq": Path(source_paths["model_eq"]),
+    }
+    with temporary_engine_configuration(
+        leads_analysis_engine, mapped_paths, output_path, progress_callback
+    ):
         leads_analysis_engine.main(start_date, end_date, test_drive_formula)
-    finally:
-        leads_analysis_engine.EXCEL_PATHS.clear()
-        leads_analysis_engine.EXCEL_PATHS.update(old_paths)
-        leads_analysis_engine.OUTPUT_XLSX_PATH = old_output
-        leads_analysis_engine.PROGRESS_CALLBACK = old_progress_callback
 
 
 def run_reservation_allocation_engine(
@@ -613,9 +579,6 @@ def run_reservation_allocation_engine(
     preallocation_settings=None,
     progress_callback=None,
 ):
-    old_paths = reservation_allocation_engine.EXCEL_PATHS.copy()
-    old_output = reservation_allocation_engine.OUTPUT_XLSX_PATH
-    old_progress_callback = reservation_allocation_engine.PROGRESS_CALLBACK
     old_window_mode = reservation_allocation_engine.ALLOCATION_WINDOW_MODE
     old_window_days = reservation_allocation_engine.ALLOCATION_WINDOW_DAYS
     old_eta_limit = reservation_allocation_engine.ALLOCATION_ETA_LIMIT
@@ -629,22 +592,17 @@ def run_reservation_allocation_engine(
             "logistics_db": Path(file_paths["logistics_db"]),
             "priority_orders": Path(file_paths["priority_orders"]),
         }
-        reservation_allocation_engine.EXCEL_PATHS.clear()
-        reservation_allocation_engine.EXCEL_PATHS.update(mapped_paths)
-        reservation_allocation_engine.OUTPUT_XLSX_PATH = Path(output_path)
-        reservation_allocation_engine.PROGRESS_CALLBACK = progress_callback
-        preallocation_settings = normalize_preallocation_settings(preallocation_settings)
-        reservation_allocation_engine.configure_allocation_window(
-            mode=preallocation_settings["mode"],
-            days=int(preallocation_settings["days"]),
-            today=date.today(),
-        )
-        reservation_allocation_engine.main()
+        with temporary_engine_configuration(
+            reservation_allocation_engine, mapped_paths, output_path, progress_callback
+        ):
+            preallocation_settings = normalize_preallocation_settings(preallocation_settings)
+            reservation_allocation_engine.configure_allocation_window(
+                mode=preallocation_settings["mode"],
+                days=int(preallocation_settings["days"]),
+                today=date.today(),
+            )
+            reservation_allocation_engine.main()
     finally:
-        reservation_allocation_engine.EXCEL_PATHS.clear()
-        reservation_allocation_engine.EXCEL_PATHS.update(old_paths)
-        reservation_allocation_engine.OUTPUT_XLSX_PATH = old_output
-        reservation_allocation_engine.PROGRESS_CALLBACK = old_progress_callback
         reservation_allocation_engine.ALLOCATION_WINDOW_MODE = old_window_mode
         reservation_allocation_engine.ALLOCATION_WINDOW_DAYS = old_window_days
         reservation_allocation_engine.ALLOCATION_ETA_LIMIT = old_eta_limit

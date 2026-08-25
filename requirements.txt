@@ -1,9 +1,5 @@
-# Core dependency for the current Sales Operations Tool desktop application.
+# Desktop Excel application.
 openpyxl==3.1.5
 
-# Dependencies used by the maintained auxiliary scripts and their tests.
+# SQL portfolio examples and their automated tests.
 duckdb==1.5.4
-pandas==3.0.3
-
-# Required to reproduce the Windows executable from Sales Operations Tool.spec.
-PyInstaller==6.21.0

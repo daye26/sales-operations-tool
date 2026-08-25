@@ -8,7 +8,7 @@ import tempfile
 import unicodedata
 
 
-CACHE_VERSION = 8
+CACHE_VERSION = 9
 CACHE_SCHEMA = "sales_operations.vehicle_tracking"
 RECORD_FIELDS = (
     "vin",
@@ -77,7 +77,7 @@ def clear_cache(cache_path):
         return False
 
 
-def load_cache(cache_path, signature, report_progress):
+def load_cache(cache_path, signature, report_progress, required_fields=()):
     cache_path = Path(cache_path)
     if not cache_path.exists():
         report_progress("VehicleTracking cache miss: no cache found")
@@ -106,6 +106,20 @@ def load_cache(cache_path, signature, report_progress):
         report_progress("VehicleTracking cache miss: cache schema changed, cache cleared")
         return None
 
+    available_fields = payload.get("available_fields")
+    if not isinstance(available_fields, (list, tuple, set)):
+        clear_cache(cache_path)
+        report_progress("VehicleTracking cache miss: cache field metadata changed, cache cleared")
+        return None
+
+    missing_required_fields = sorted(set(required_fields) - set(available_fields))
+    if missing_required_fields:
+        report_progress(
+            "VehicleTracking cache miss: required source fields are unavailable, "
+            "validating the workbook"
+        )
+        return None
+
     if payload.get("signature") != signature:
         clear_cache(cache_path)
         report_progress("VehicleTracking cache miss: source file changed, cache cleared")
@@ -121,7 +135,7 @@ def load_cache(cache_path, signature, report_progress):
     return by_vin
 
 
-def write_cache(cache_path, signature, by_vin, report_progress):
+def write_cache(cache_path, signature, by_vin, report_progress, available_fields=()):
     cache_path = Path(cache_path)
     temporary_path = None
     try:
@@ -141,6 +155,7 @@ def write_cache(cache_path, signature, by_vin, report_progress):
                     "record_fields": RECORD_FIELDS,
                     "signature": signature,
                     "by_vin": by_vin,
+                    "available_fields": tuple(sorted(set(available_fields))),
                 },
                 file,
                 protocol=pickle.HIGHEST_PROTOCOL,

@@ -14,7 +14,9 @@ from excel_sheet_selection import select_active_then_sheet1
 from excel_output import append_row, calculate_column_widths, prepare_worksheet, save_workbook_atomically
 import free_cars_history
 from port_resolution import resolve_port as resolve_operational_port
+import tabular_normalization as tabular
 import vehicle_tracking_cache as tracking_cache
+import vehicle_tracking_loader
 from warning_samples import WarningSamples
 
 
@@ -131,8 +133,7 @@ HEADER_ALIASES = {
 }
 
 
-def is_missing(value):
-    return value is None or str(value).strip() == ""
+is_missing = tabular.is_missing
 
 
 def report_progress(message):
@@ -201,63 +202,31 @@ def load_vehicle_tracking_cache(signature):
 
 
 def write_vehicle_tracking_cache(signature, by_vin):
-    tracking_cache.write_cache(VEHICLE_TRACKING_CACHE_PATH, signature, by_vin, report_progress)
+    tracking_cache.write_cache(
+        VEHICLE_TRACKING_CACHE_PATH,
+        signature,
+        by_vin,
+        report_progress,
+        vehicle_tracking_loader.ALL_SOURCE_FIELDS,
+    )
 
 
-def format_value(value):
-    if is_missing(value):
-        return ""
-
-    return str(value).replace("\r", " ").replace("\n", " ").strip()
-
-
-def normalize_header(value):
-    value = unicodedata.normalize("NFKC", format_value(value))
-    value = value.lower()
-    value = re.sub(r"\s+", " ", value)
-    return value.replace("-", " ").replace("_", " ").strip()
+format_value = tabular.format_value
+normalize_header = tabular.normalize_header
 
 
 def header_index(columns, column_name, required=True):
-    aliases = {normalize_header(alias) for alias in HEADER_ALIASES[column_name]}
-    for index, column in enumerate(columns):
-        if normalize_header(column) in aliases:
-            return index
-
-    if not required:
-        return None
-
-    raise ValueError(f"Missing column {column_name}. Headers: {columns}")
+    return tabular.header_index(columns, HEADER_ALIASES, column_name, required)
 
 
 def build_indexes(columns, required_columns, optional_columns=None):
-    indexes = {column: header_index(columns, column) for column in required_columns}
-    for column in optional_columns or []:
-        indexes[column] = header_index(columns, column, required=False)
-    return indexes
+    return tabular.build_indexes(columns, HEADER_ALIASES, required_columns, optional_columns)
 
 
-def max_required_col(indexes):
-    return max(index for index in indexes.values() if index is not None) + 1
-
-
-def row_value(row, indexes, column):
-    index = indexes[column]
-    if index is None or index >= len(row):
-        return None
-
-    return row[index]
-
-
-def text_key(value):
-    value = format_value(value).upper()
-    value = unicodedata.normalize("NFD", value)
-    value = "".join(char for char in value if unicodedata.category(char) != "Mn")
-    return re.sub(r"\s+", " ", value).strip()
-
-
-def code_key(value):
-    return format_value(value).upper()
+max_required_col = tabular.max_required_col
+row_value = tabular.row_value
+text_key = tabular.text_key
+code_key = tabular.code_key
 
 
 def identifier_key(value):
@@ -271,8 +240,7 @@ def sales_order_key(value):
     return identifier_key(value)
 
 
-def vin_key(value):
-    return code_key(value)
+vin_key = tabular.vin_key
 
 
 def created_by_key(value):
@@ -294,6 +262,25 @@ def is_excluded_dsn(value):
 
 def or_number_priority_key(value):
     return format_value(value).upper().replace(" ", "")[:9]
+
+
+def priority_reference(value):
+    """Classify a Quick Allocate entry as an OR/OW reference or Sales Order."""
+    normalized = format_value(value).upper()
+    compact = normalized.replace(" ", "")
+    if not compact:
+        return None, ""
+    if compact.startswith(("OR", "OW")):
+        return "or_ow", or_number_priority_key(normalized)
+    return "sales_order", sales_order_key(normalized)
+
+
+def priority_reference_matches_order(order, order_columns, priority_references):
+    """Return whether an order is listed in the single-column Quick Allocate file."""
+    return (
+        or_number_priority_key(order[order_columns.index("or_number")]) in priority_references["or_ow"]
+        or sales_order_key(order[order_columns.index("sales_order")]) in priority_references["sales_order"]
+    )
 
 
 def to_number(value):
@@ -463,97 +450,13 @@ def load_mc_norm():
 
 
 def load_vehicle_tracking():
-    signature = vehicle_tracking_file_signature()
-    cached = load_vehicle_tracking_cache(signature)
-    if cached is not None:
-        return tracking_cache.apply_shipping_eta_overrides(
-            cached,
-            SHIPPING_ETA_OVERRIDES,
-            report_progress,
-        )
-
-    report_progress("Reading VehicleTracking.xlsx...")
-    worksheet = open_sheet("vehicle_tracking")
-    try:
-        columns = read_header(worksheet)
-        indexes = build_indexes(
-            columns,
-            ["vin", "eta", "port", "gate_in", "status"],
-            optional_columns=[
-                "material_code",
-                "description",
-                "vessel",
-                "dsn",
-                "sap",
-                "gate_out",
-                "production_date",
-                "invoice_date",
-                "customer_country",
-                "address",
-                "city",
-                "tag",
-                "related_order",
-                "reserved_so",
-                "dn_create_time",
-                "allocation_date",
-            ],
-        )
-        max_col = max_required_col(indexes)
-        report_progress(f"VehicleTracking.xlsx columns limited to {max_col} of {len(columns)}")
-        by_vin = {}
-        vin_counter = Counter()
-        scanned_rows = 0
-
-        for scanned_rows, row in enumerate(worksheet.iter_rows(min_row=2, max_col=max_col, values_only=True), start=1):
-            if scanned_rows % 25000 == 0:
-                report_progress(
-                    f"Reading VehicleTracking.xlsx: {scanned_rows:,} rows scanned, {len(by_vin):,} VINs loaded"
-                )
-            if not any(not is_missing(value) for value in row):
-                continue
-
-            vin = vin_key(row_value(row, indexes, "vin"))
-            if is_missing(vin):
-                continue
-
-            vin_counter[vin] += 1
-            by_vin[vin] = {
-                "vin": vin,
-                "material_code": code_key(row_value(row, indexes, "material_code")),
-                "description": format_value(row_value(row, indexes, "description")),
-                "eta": row_value(row, indexes, "eta"),
-                "port": format_value(row_value(row, indexes, "port")),
-                "vessel_name": format_value(row_value(row, indexes, "vessel")),
-                "dsn": format_value(row_value(row, indexes, "dsn")),
-                "sap": code_key(row_value(row, indexes, "sap")),
-                "gate_in": row_value(row, indexes, "gate_in"),
-                "gate_out": row_value(row, indexes, "gate_out"),
-                "production_date": row_value(row, indexes, "production_date"),
-                "status": format_value(row_value(row, indexes, "status")),
-                "invoice_date": row_value(row, indexes, "invoice_date"),
-                "country": format_value(row_value(row, indexes, "customer_country")),
-                "address": format_value(row_value(row, indexes, "address")),
-                "city": format_value(row_value(row, indexes, "city")),
-                "tag": format_value(row_value(row, indexes, "tag")),
-                "related_order": format_value(row_value(row, indexes, "related_order")),
-                "reserved_so": format_value(row_value(row, indexes, "reserved_so")),
-                "dn_create_time": row_value(row, indexes, "dn_create_time"),
-                "allocation_date": row_value(row, indexes, "allocation_date"),
-            }
-
-        duplicated = sorted(vin for vin, count in vin_counter.items() if count > 1)
-        if duplicated:
-            raise ValueError(f"vehicle_tracking.vin duplicated values: {', '.join(duplicated[:10])}")
-
-        report_progress(f"Vehicle tracking loaded: {len(by_vin):,} VINs from {scanned_rows:,} rows")
-        write_vehicle_tracking_cache(signature, by_vin)
-        return tracking_cache.apply_shipping_eta_overrides(
-            by_vin,
-            SHIPPING_ETA_OVERRIDES,
-            report_progress,
-        )
-    finally:
-        close_sheet_workbook(worksheet)
+    return vehicle_tracking_loader.load_vehicle_tracking(
+        EXCEL_PATHS["vehicle_tracking"],
+        VEHICLE_TRACKING_CACHE_PATH,
+        report_progress,
+        required_fields=("vin", "eta", "port", "gate_in", "status"),
+        shipping_eta_overrides=SHIPPING_ETA_OVERRIDES,
+    )
 
 
 def load_newport_ports():
@@ -928,23 +831,33 @@ def load_priority_keys():
     try:
         columns = read_header(worksheet)
         indexes = build_indexes(columns, ["or_number"])
-        keys = set()
-        key_counter = Counter()
+        priority_references = {"or_ow": set(), "sales_order": set()}
+        key_counters = {"or_ow": Counter(), "sales_order": Counter()}
 
         for row in worksheet.iter_rows(min_row=2, values_only=True):
             if not any(not is_missing(value) for value in row):
                 continue
 
-            priority_key = or_number_priority_key(row_value(row, indexes, "or_number"))
-            if is_missing(priority_key):
+            reference_type, priority_key = priority_reference(row_value(row, indexes, "or_number"))
+            if reference_type is None:
                 continue
-            keys.add(priority_key)
-            key_counter[priority_key] += 1
+            priority_references[reference_type].add(priority_key)
+            key_counters[reference_type][priority_key] += 1
 
-        duplicated = sorted(key for key, count in key_counter.items() if count > 1)
-        print_warning("priority duplicate OR/OW keys", [f"{key};{key_counter[key]}" for key in duplicated])
-        report_progress(f"Priority OR/OW keys loaded: {len(keys):,}")
-        return keys
+        for reference_type, label in (("or_ow", "OR/OW"), ("sales_order", "Sales Order")):
+            duplicated = sorted(
+                key for key, count in key_counters[reference_type].items() if count > 1
+            )
+            print_warning(
+                f"priority duplicate {label} keys",
+                [f"{key};{key_counters[reference_type][key]}" for key in duplicated],
+            )
+        report_progress(
+            "Priority references loaded: "
+            f"{len(priority_references['or_ow']):,} OR/OW and "
+            f"{len(priority_references['sales_order']):,} Sales Order"
+        )
+        return priority_references
     finally:
         close_sheet_workbook(worksheet)
 
@@ -1687,7 +1600,7 @@ def main():
         port_stock_ports,
         include_portugal_reserved_cars=True,
     )
-    priority_keys = load_priority_keys()
+    priority_references = load_priority_keys()
     reservations = load_reservations(vehicle_tracking)
 
     print()
@@ -1703,7 +1616,8 @@ def main():
     print(f"available_cars_offline_or_empty_status: {available_cars_summary['offline_or_empty_status']}")
     print(f"available_cars_priority_zero_excluded: {available_cars_summary['priority_zero_excluded']}")
     print(f"available_cars_priority_zero_group_only: {available_cars_summary['priority_zero_group_only']}")
-    print(f"priority_or_ow_keys_loaded: {len(priority_keys)}")
+    print(f"priority_or_ow_keys_loaded: {len(priority_references['or_ow'])}")
+    print(f"priority_sales_order_keys_loaded: {len(priority_references['sales_order'])}")
     print(f"reservations_loaded: {len(reservations)}")
     print(f"preallocation_window: {preallocation_window_label()}")
 
@@ -1750,17 +1664,28 @@ def main():
         reservation_columns=reservation_columns,
     )
 
-    order_priority_keys = {
+    order_or_ow_priority_keys = {
         or_number_priority_key(row[order_columns.index("or_number")])
         for row in orders
         if not is_missing(row[order_columns.index("or_number")])
     }
-    priority_not_in_orders = sorted(priority_keys - order_priority_keys)
-    print_warning("priority OR/OW keys not in clean orders", priority_not_in_orders)
+    order_sales_order_priority_keys = {
+        sales_order_key(row[order_columns.index("sales_order")])
+        for row in orders
+        if not is_missing(row[order_columns.index("sales_order")])
+    }
+    print_warning(
+        "priority OR/OW keys not in clean orders",
+        sorted(priority_references["or_ow"] - order_or_ow_priority_keys),
+    )
+    print_warning(
+        "priority Sales Order keys not in clean orders",
+        sorted(priority_references["sales_order"] - order_sales_order_priority_keys),
+    )
 
     orders_with_priority_columns = order_columns + ["priority"]
     orders_with_priority = [
-        row + ("Y" if or_number_priority_key(row[order_columns.index("or_number")]) in priority_keys else "N",)
+        row + ("Y" if priority_reference_matches_order(row, order_columns, priority_references) else "N",)
         for row in orders
     ]
 

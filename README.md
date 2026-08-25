@@ -16,6 +16,7 @@ Además de la interfaz de escritorio, la aplicación valida ficheros de entrada,
 
 - Python y desarrollo de aplicaciones de escritorio con Tkinter.
 - Procesamiento y generación de archivos Excel con `openpyxl`.
+- Consultas SQL ejecutables con DuckDB para documentar parte de la lógica de datos.
 - Validación de datos y gestión de errores.
 - Automatización de procesos operativos.
 - Organización de código en módulos reutilizables.
@@ -29,7 +30,7 @@ Este proceso me permitió trasladar reglas orientadas a datos a una aplicación 
 
 ## Ejemplos SQL
 
-El trabajo original incluyó 30 scripts SQL orientados a distintos procesos operativos. Este repositorio contiene una selección reducida de ejemplos reconstruidos para fines de portfolio.
+El trabajo original incluyó varios scripts SQL orientados a distintos procesos operativos. Este repositorio contiene una selección reducida de ejemplos reconstruidos para fines de portfolio.
 
 Los scripts publicados muestran técnicas de normalización, validación, CTEs, agregaciones y funciones de ventana, sin incluir datos operativos, rutas locales, nombres internos de tablas ni configuraciones confidenciales.
 
@@ -60,8 +61,16 @@ La lectura de libros de entrada también comprueba los encabezados esperados par
 
 ## Requisitos
 
-- Python.
+- Python 3 con Tkinter disponible.
 - Las dependencias indicadas en `requirements.txt`.
+
+Tkinter no se instala mediante `pip` porque forma parte de la instalación de Python. En Windows, el instalador oficial de Python suele incluir Tcl/Tk; puedes comprobarlo con:
+
+```powershell
+python -m tkinter
+```
+
+Si no se abre una ventana de prueba, modifica o reinstala Python incluyendo la opción **Tcl/Tk and IDLE**. En distribuciones Linux puede ser necesario instalar el paquete del sistema `python3-tk` antes de crear el entorno virtual.
 
 ## Instalación
 
@@ -86,6 +95,8 @@ Las pruebas automatizadas usan datos sintéticos y no requieren archivos operati
 ```powershell
 python -m unittest discover -s tests
 ```
+
+GitHub Actions ejecuta esta suite y comprueba que el código Python compile en cada cambio publicado.
 
 Al abrir la aplicación:
 

@@ -13,7 +13,9 @@ from excel_sheet_selection import select_active_then_sheet1
 from excel_output import append_row, calculate_column_widths, prepare_worksheet, save_workbook_atomically
 import free_cars_history
 from port_resolution import resolve_port
+import tabular_normalization as tabular
 import vehicle_tracking_cache as tracking_cache
+import vehicle_tracking_loader
 
 
 warnings.filterwarnings("ignore", message="Workbook contains no default style.*")
@@ -134,8 +136,7 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 
-def is_missing(value):
-    return value is None or str(value).strip() == ""
+is_missing = tabular.is_missing
 
 
 def report_progress(message):
@@ -162,64 +163,32 @@ def load_vehicle_tracking_cache(signature):
 
 
 def write_vehicle_tracking_cache(signature, by_vin):
-    tracking_cache.write_cache(VEHICLE_TRACKING_CACHE_PATH, signature, by_vin, report_progress)
+    tracking_cache.write_cache(
+        VEHICLE_TRACKING_CACHE_PATH,
+        signature,
+        by_vin,
+        report_progress,
+        vehicle_tracking_loader.ALL_SOURCE_FIELDS,
+    )
 
 
-def format_value(value):
-    if is_missing(value):
-        return ""
-    return str(value).replace("\r", " ").replace("\n", " ").strip()
-
-
-def normalize_header(value):
-    text = unicodedata.normalize("NFKC", format_value(value))
-    text = text.lower()
-    text = text.replace("-", " ").replace("_", " ")
-    text = re.sub(r"\s+", " ", text)
-    return text.strip()
-
-
-def text_key(value):
-    text = unicodedata.normalize("NFD", format_value(value).upper())
-    text = "".join(char for char in text if unicodedata.category(char) != "Mn")
-    return re.sub(r"\s+", " ", text).strip()
-
-
-def code_key(value):
-    return format_value(value).upper()
-
-
-def vin_key(value):
-    return code_key(value)
+format_value = tabular.format_value
+normalize_header = tabular.normalize_header
+text_key = tabular.text_key
+code_key = tabular.code_key
+vin_key = tabular.vin_key
 
 
 def header_index(columns, column_name, required=True):
-    aliases = {normalize_header(alias) for alias in HEADER_ALIASES[column_name]}
-    for index, column in enumerate(columns):
-        if normalize_header(column) in aliases:
-            return index
-    if required:
-        raise ValueError(f"Missing column {column_name}. Headers: {columns}")
-    return None
+    return tabular.header_index(columns, HEADER_ALIASES, column_name, required)
 
 
 def build_indexes(columns, required_columns, optional_columns=None):
-    indexes = {column: header_index(columns, column) for column in required_columns}
-    for column in optional_columns or []:
-        indexes[column] = header_index(columns, column, required=False)
-    return indexes
+    return tabular.build_indexes(columns, HEADER_ALIASES, required_columns, optional_columns)
 
 
-def row_value(row, indexes, column):
-    index = indexes.get(column)
-    if index is None or index >= len(row):
-        return None
-    return row[index]
-
-
-def max_required_col(indexes):
-    values = [index for index in indexes.values() if index is not None]
-    return max(values) + 1
+row_value = tabular.row_value
+max_required_col = tabular.max_required_col
 
 
 def open_sheet(key):
@@ -568,95 +537,27 @@ def load_reservation_vins():
 
 
 def load_vehicle_tracking():
-    signature = vehicle_tracking_file_signature()
-    cached = load_vehicle_tracking_cache(signature)
-    if cached is not None:
-        return cached
-
-    report_progress("Reading VehicleTracking.xlsx...")
-    workbook, worksheet = open_sheet("vehicle_tracking")
-    try:
-        columns = read_header(worksheet)
-        indexes = build_indexes(
-            columns,
-            [
-                "vin",
-                "material_code",
-                "description",
-                "port",
-                "vessel",
-                "eta",
-                "dsn",
-                "sap",
-                "status",
-                "gate_in",
-                "gate_out",
-                "production_date",
-                "invoice_date",
-                "customer_country",
-            ],
-            optional_columns=[
-                "tag",
-                "related_order",
-                "reserved_so",
-                "dn_create_time",
-                "allocation_date",
-                "address",
-                "city",
-            ],
-        )
-        max_col = max_required_col(indexes)
-        report_progress(f"VehicleTracking.xlsx columns limited to {max_col} of {len(columns)}")
-        by_vin = {}
-        vin_counter = Counter()
-        scanned_rows = 0
-
-        for scanned_rows, row in enumerate(worksheet.iter_rows(min_row=2, max_col=max_col, values_only=True), start=1):
-            if scanned_rows % 25000 == 0:
-                report_progress(
-                    f"Reading VehicleTracking.xlsx: {scanned_rows:,} rows scanned, {len(by_vin):,} VINs loaded"
-                )
-            if not any(not is_missing(value) for value in row):
-                continue
-
-            vin = vin_key(row_value(row, indexes, "vin"))
-            if is_missing(vin):
-                continue
-
-            vin_counter[vin] += 1
-            by_vin[vin] = {
-                "vin": vin,
-                "material_code": code_key(row_value(row, indexes, "material_code")),
-                "description": format_value(row_value(row, indexes, "description")),
-                "eta": row_value(row, indexes, "eta"),
-                "port": format_value(row_value(row, indexes, "port")),
-                "vessel_name": format_value(row_value(row, indexes, "vessel")),
-                "dsn": format_value(row_value(row, indexes, "dsn")),
-                "sap": code_key(row_value(row, indexes, "sap")),
-                "gate_in": row_value(row, indexes, "gate_in"),
-                "gate_out": row_value(row, indexes, "gate_out"),
-                "production_date": row_value(row, indexes, "production_date"),
-                "status": format_value(row_value(row, indexes, "status")),
-                "invoice_date": row_value(row, indexes, "invoice_date"),
-                "country": format_value(row_value(row, indexes, "customer_country")),
-                "address": format_value(row_value(row, indexes, "address")),
-                "city": format_value(row_value(row, indexes, "city")),
-                "tag": format_value(row_value(row, indexes, "tag")),
-                "related_order": format_value(row_value(row, indexes, "related_order")),
-                "reserved_so": format_value(row_value(row, indexes, "reserved_so")),
-                "dn_create_time": row_value(row, indexes, "dn_create_time"),
-                "allocation_date": row_value(row, indexes, "allocation_date"),
-            }
-
-        duplicated = sorted(vin for vin, count in vin_counter.items() if count > 1)
-        if duplicated:
-            raise ValueError(f"vehicle_tracking.vin duplicated values: {', '.join(duplicated[:10])}")
-
-        report_progress(f"Vehicle tracking loaded: {len(by_vin):,} VINs from {scanned_rows:,} rows")
-        write_vehicle_tracking_cache(signature, by_vin)
-        return by_vin
-    finally:
-        workbook.close()
+    return vehicle_tracking_loader.load_vehicle_tracking(
+        EXCEL_PATHS["vehicle_tracking"],
+        VEHICLE_TRACKING_CACHE_PATH,
+        report_progress,
+        required_fields=(
+            "vin",
+            "material_code",
+            "description",
+            "port",
+            "vessel",
+            "eta",
+            "dsn",
+            "sap",
+            "status",
+            "gate_in",
+            "gate_out",
+            "production_date",
+            "invoice_date",
+            "customer_country",
+        ),
+    )
 
 
 def load_vehicle_tracking_lookup_for_vins(vins):

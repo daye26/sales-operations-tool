@@ -9,11 +9,12 @@ import warnings
 
 from openpyxl import Workbook, load_workbook
 
-import asignaciones_excel as vehicle_tracking_cache
+import asignaciones_excel as preallocation_engine
 from excel_sheet_selection import select_active_then_sheet1
 import free_cars_history
 from excel_output import append_row, calculate_column_widths, prepare_worksheet, save_workbook_atomically
 from port_resolution import resolve_port
+import tabular_normalization as tabular
 
 
 warnings.filterwarnings("ignore", message="Workbook contains no default style.*")
@@ -75,30 +76,11 @@ def report_progress(message):
         pass
 
 
-def is_missing(value):
-    return value is None or str(value).strip() == ""
-
-
-def format_value(value):
-    if is_missing(value):
-        return ""
-    return str(value).replace("\r", " ").replace("\n", " ").strip()
-
-
-def normalize_header(value):
-    text = unicodedata.normalize("NFKC", format_value(value)).lower()
-    text = text.replace("-", " ").replace("_", " ")
-    return re.sub(r"\s+", " ", text).strip()
-
-
-def text_key(value):
-    text = unicodedata.normalize("NFD", format_value(value).upper())
-    text = "".join(char for char in text if unicodedata.category(char) != "Mn")
-    return re.sub(r"\s+", " ", text).strip()
-
-
-def vin_key(value):
-    return format_value(value).upper()
+is_missing = tabular.is_missing
+format_value = tabular.format_value
+normalize_header = tabular.normalize_header
+text_key = tabular.text_key
+vin_key = tabular.vin_key
 
 
 def to_datetime(value):
@@ -136,18 +118,10 @@ def to_date(value):
 
 
 def header_index(headers, field, required=True):
-    aliases = {normalize_header(alias) for alias in HEADER_ALIASES[field]}
-    for index, header in enumerate(headers):
-        if normalize_header(header) in aliases:
-            return index
-    if required:
-        raise ValueError(f"Missing column {field}. Headers: {headers}")
-    return None
+    return tabular.header_index(headers, HEADER_ALIASES, field, required)
 
 
-def row_value(row, indexes, field):
-    index = indexes.get(field)
-    return row[index] if index is not None and index < len(row) else None
+row_value = tabular.row_value
 
 
 def open_sheet(key):
@@ -204,8 +178,8 @@ def load_not_allocated():
                     "port": row_value(row, indexes, "port"),
                     "material_code": format_value(row_value(row, indexes, "material_code")).upper(),
                     "priority": format_value(row_value(row, indexes, "priority")),
-                    "match_group": vehicle_tracking_cache.format_match_groups(
-                        vehicle_tracking_cache.parse_match_groups(
+                    "match_group": preallocation_engine.format_match_groups(
+                        preallocation_engine.parse_match_groups(
                             row_value(row, indexes, "match_group"),
                             f"Cars not allocated Match group row {row_number}",
                         )
@@ -287,15 +261,15 @@ def load_vin_set(key, label):
 
 
 def load_vehicle_tracking():
-    old_path = vehicle_tracking_cache.EXCEL_PATHS["vehicle_tracking"]
-    old_callback = vehicle_tracking_cache.PROGRESS_CALLBACK
+    old_path = preallocation_engine.EXCEL_PATHS["vehicle_tracking"]
+    old_callback = preallocation_engine.PROGRESS_CALLBACK
     try:
-        vehicle_tracking_cache.EXCEL_PATHS["vehicle_tracking"] = EXCEL_PATHS["vehicle_tracking"]
-        vehicle_tracking_cache.PROGRESS_CALLBACK = PROGRESS_CALLBACK or report_progress
-        return vehicle_tracking_cache.load_vehicle_tracking()
+        preallocation_engine.EXCEL_PATHS["vehicle_tracking"] = EXCEL_PATHS["vehicle_tracking"]
+        preallocation_engine.PROGRESS_CALLBACK = PROGRESS_CALLBACK or report_progress
+        return preallocation_engine.load_vehicle_tracking()
     finally:
-        vehicle_tracking_cache.EXCEL_PATHS["vehicle_tracking"] = old_path
-        vehicle_tracking_cache.PROGRESS_CALLBACK = old_callback
+        preallocation_engine.EXCEL_PATHS["vehicle_tracking"] = old_path
+        preallocation_engine.PROGRESS_CALLBACK = old_callback
 
 
 def load_port_stock_ports():

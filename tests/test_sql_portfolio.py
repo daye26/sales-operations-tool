@@ -51,3 +51,19 @@ class SqlPortfolioTests(unittest.TestCase):
             },
             set(rows),
         )
+
+    def test_all_portfolio_queries_execute_with_the_fictional_schema(self):
+        repository = Path(__file__).resolve().parents[1]
+        sql_directory = repository / "sql"
+        setup_sql = (sql_directory / "00_demo_schema_and_data.sql").read_text(encoding="utf-8")
+
+        for sql_file in sorted(sql_directory.glob("[0-9][0-9]_*.sql")):
+            if sql_file.name == "00_demo_schema_and_data.sql":
+                continue
+            with self.subTest(query=sql_file.name):
+                connection = duckdb.connect(":memory:")
+                try:
+                    connection.execute(setup_sql)
+                    connection.execute(sql_file.read_text(encoding="utf-8")).fetchall()
+                finally:
+                    connection.close()

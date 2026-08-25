@@ -8,11 +8,12 @@ import warnings
 
 from openpyxl import Workbook, load_workbook
 
-import asignaciones_excel as vehicle_tracking_cache
+import asignaciones_excel as preallocation_engine
 from excel_sheet_selection import select_active_then_sheet1
 from excel_output import append_row, calculate_column_widths, prepare_worksheet, save_workbook_atomically
 import free_cars_history
 from port_resolution import resolve_port
+import tabular_normalization as tabular
 
 
 warnings.filterwarnings("ignore", message="Workbook contains no default style.*")
@@ -76,8 +77,7 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 
-def is_missing(value):
-    return value is None or str(value).strip() == ""
+is_missing = tabular.is_missing
 
 
 def report_progress(message):
@@ -91,50 +91,21 @@ def report_progress(message):
         pass
 
 
-def format_value(value):
-    if is_missing(value):
-        return ""
-    return str(value).replace("\r", " ").replace("\n", " ").strip()
-
-
-def normalize_header(value):
-    text = unicodedata.normalize("NFKC", format_value(value))
-    text = text.lower()
-    text = text.replace("-", " ").replace("_", " ")
-    text = re.sub(r"\s+", " ", text)
-    return text.strip()
-
-
-def code_key(value):
-    return format_value(value).upper()
-
-
-def vin_key(value):
-    return code_key(value)
+format_value = tabular.format_value
+normalize_header = tabular.normalize_header
+code_key = tabular.code_key
+vin_key = tabular.vin_key
 
 
 def header_index(columns, column_name, required=True):
-    aliases = {normalize_header(alias) for alias in HEADER_ALIASES[column_name]}
-    for index, column in enumerate(columns):
-        if normalize_header(column) in aliases:
-            return index
-    if required:
-        raise ValueError(f"Missing column {column_name}. Headers: {columns}")
-    return None
+    return tabular.header_index(columns, HEADER_ALIASES, column_name, required)
 
 
 def build_indexes(columns, required_columns, optional_columns=None):
-    indexes = {column: header_index(columns, column) for column in required_columns}
-    for column in optional_columns or []:
-        indexes[column] = header_index(columns, column, required=False)
-    return indexes
+    return tabular.build_indexes(columns, HEADER_ALIASES, required_columns, optional_columns)
 
 
-def row_value(row, indexes, column):
-    index = indexes.get(column)
-    if index is None or index >= len(row):
-        return None
-    return row[index]
+row_value = tabular.row_value
 
 
 def open_sheet(key):
@@ -207,19 +178,19 @@ def print_warning(title, rows):
 
 
 def load_vehicle_tracking():
-    old_path = vehicle_tracking_cache.EXCEL_PATHS["vehicle_tracking"]
-    old_callback = vehicle_tracking_cache.PROGRESS_CALLBACK
+    old_path = preallocation_engine.EXCEL_PATHS["vehicle_tracking"]
+    old_callback = preallocation_engine.PROGRESS_CALLBACK
     try:
-        vehicle_tracking_cache.EXCEL_PATHS["vehicle_tracking"] = EXCEL_PATHS["vehicle_tracking"]
-        vehicle_tracking_cache.PROGRESS_CALLBACK = PROGRESS_CALLBACK or report_progress
-        return vehicle_tracking_cache.load_vehicle_tracking()
+        preallocation_engine.EXCEL_PATHS["vehicle_tracking"] = EXCEL_PATHS["vehicle_tracking"]
+        preallocation_engine.PROGRESS_CALLBACK = PROGRESS_CALLBACK or report_progress
+        return preallocation_engine.load_vehicle_tracking()
     finally:
-        vehicle_tracking_cache.EXCEL_PATHS["vehicle_tracking"] = old_path
-        vehicle_tracking_cache.PROGRESS_CALLBACK = old_callback
+        preallocation_engine.EXCEL_PATHS["vehicle_tracking"] = old_path
+        preallocation_engine.PROGRESS_CALLBACK = old_callback
 
 
 def clear_vehicle_tracking_cache():
-    return vehicle_tracking_cache.clear_vehicle_tracking_cache()
+    return preallocation_engine.clear_vehicle_tracking_cache()
 
 
 def load_port_stock_ports():
