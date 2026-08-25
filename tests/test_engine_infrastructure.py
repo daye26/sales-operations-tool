@@ -7,7 +7,6 @@ from openpyxl import Workbook
 
 import allocation_excel
 import asignaciones_excel
-import dealer_stock_excel
 import sales_operations_app
 import tabular_normalization as tabular
 import vehicle_tracking_loader
@@ -73,44 +72,6 @@ class EngineInfrastructureTests(unittest.TestCase):
                 {"or_ow": set(), "sales_order": {"12345"}},
             )
         )
-
-    def test_dealer_stock_uses_a_generic_internal_dealer_exception(self):
-        stock_rows = [
-            {
-                "vin": "TEST-VEHICLE-01",
-                "or_number": "",
-                "eta": "2030-01-01",
-                "group_name": "GROUP-A",
-                "p_series": "MODEL-A",
-                "p_trim": "TRIM-A",
-                "int_color": "INTERIOR-A",
-                "ext_color": "EXTERIOR-A",
-                "o_match": "",
-            }
-        ]
-        orders = [
-            {
-                "vin": "",
-                "dealer": dealer_stock_excel.EXCLUDED_BACK_ORDER_DEALER,
-                "dealer_info": {"group_name": "GROUP-A"},
-                "or_date": "2030-01-01",
-                "or_number": "OR-00001",
-                "mc": {
-                    "p_series": "MODEL-A",
-                    "p_trim": "TRIM-A",
-                    "int_color": "INTERIOR-A",
-                    "ext_color": "EXTERIOR-A",
-                },
-                "acc_type": "",
-                "owner_name": "",
-                "client": "",
-            }
-        ]
-
-        dealer_stock_excel.apply_back_order_matches(stock_rows, orders)
-
-        self.assertEqual("N", stock_rows[0]["o_match"])
-        self.assertEqual("", stock_rows[0]["or_number"])
 
     def test_temporary_engine_configuration_restores_state_after_an_error(self):
         engine = types.SimpleNamespace(

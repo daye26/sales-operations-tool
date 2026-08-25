@@ -54,7 +54,6 @@ SHEET_NAMES = {
 }
 
 OLD_DEROGATION_CUTOFF = None
-EXCLUDED_BACK_ORDER_DEALER = "Internal Dealer"
 
 DEALER_STOCK_COLUMNS = [
     "vin",
@@ -880,7 +879,7 @@ def apply_back_order_matches(stock_rows, orders):
     for order in orders:
         if order["vin"]:
             continue
-        if text_key(order["dealer"]) == text_key(EXCLUDED_BACK_ORDER_DEALER):
+        if text_key(order["dealer"]) == text_key("SAIC Motor Spain"):
             continue
         if order["dealer_info"] is None:
             continue
